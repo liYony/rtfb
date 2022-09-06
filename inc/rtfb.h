@@ -92,6 +92,7 @@ struct rt_device_graphic_ops
     rt_err_t (*destroy)(rt_device_graphic_t gra);
     rt_err_t (*convert) (rt_device_graphic_t gra);
     rt_err_t (*refresh)(rt_device_graphic_t gra);
+    rt_err_t (*contorl)(rt_device_graphic_t gra, int cmd, void *args)
 };
 
 struct rt_device_graphic

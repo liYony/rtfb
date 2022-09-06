@@ -68,6 +68,8 @@ rt_err_t _graphic_control(rt_device_t dev, int cmd, void *args)
         break;
 
     default:
+        if (gra->ops->contorl)
+            gra->ops->contorl(gra, cmd, args);
         break;
     }
     return result;
