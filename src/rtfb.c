@@ -35,6 +35,9 @@ rt_size_t _graphic_read(rt_device_t dev, rt_off_t pos, void *buffer, rt_size_t s
     if (size >= gra->info.smem_len - pos)
         size = gra->info.smem_len - pos;
 
+    if (gra->ops->read)
+        return gra->ops->read(gra, pos, buffer, size);
+
     rt_memcpy(buffer, &gra->info.framebuffer[pos], size);
 
     return size;
@@ -48,6 +51,9 @@ rt_size_t _graphic_write(rt_device_t dev, rt_off_t pos, const void *buffer, rt_s
 
     if (!gra->info.framebuffer)
         return -1;
+
+    if (gra->ops->write)
+        return gra->ops->write(gra, pos, buffer, size);
 
     rt_memcpy(&gra->info.framebuffer[pos], buffer, size);
 
@@ -146,27 +152,33 @@ rt_err_t rt_graphic_init(rt_device_graphic_t gra)
 rt_err_t rt_graphic_set_pixel(rt_device_graphic_t gra, const char *pixel, int x, int y)
 {
     rt_err_t result = RT_EOK;
-    rt_uint8_t pixel_bytes, *pixel_addr;
+    rt_uint8_t pixel_bytes, *pixel_buf;
+    rt_uint16_t pixel_pos;
 
     RT_ASSERT(gra != RT_NULL);
-    RT_ASSERT(gra->info.framebuffer != RT_NULL);
 
     pixel_bytes = gra->info.bits_per_pixel / 8;
-    pixel_addr = gra->info.framebuffer + y * gra->info.pitch + ((pixel_bytes == 0) ? x / 8 : x * pixel_bytes);
+    pixel_buf = (rt_uint8_t *)rt_calloc(1, pixel_bytes > 1 ? pixel_bytes : 1);
+    pixel_pos = y * gra->info.pitch + ((pixel_bytes == 0) ? x / 8 : x * pixel_bytes);
+
+    rt_device_read((rt_device_t)gra, pixel_pos, pixel_buf, pixel_bytes > 1 ? pixel_bytes : 1);
 
     if (pixel_bytes == 0)
     {
-        rt_int16_t bit = x & 0x7;
+        rt_uint8_t bit = x & 0x7;
 
         if (*pixel)
-            *pixel_addr |= (1 << bit);
+            *pixel_buf |= (1 << bit);
         else
-            *pixel_addr &= ~(1 << bit);
+            *pixel_buf &= ~(1 << bit);
     }
     else
     {
-        rt_memcpy(pixel_addr, pixel, pixel_bytes);
+        rt_memcpy(pixel_buf, pixel, pixel_bytes);
     }
+
+    rt_device_write((rt_device_t)gra, pixel_pos, pixel_buf, pixel_bytes > 1 ? pixel_bytes : 1);
+    rt_free(pixel_buf);
 
     return result;
 }
@@ -174,27 +186,32 @@ rt_err_t rt_graphic_set_pixel(rt_device_graphic_t gra, const char *pixel, int x,
 rt_err_t rt_graphic_get_pixel(rt_device_graphic_t gra, char *pixel, int x, int y)
 {
     rt_err_t result = RT_EOK;
-    rt_uint8_t pixel_bytes, *pixel_addr;
+    rt_uint8_t pixel_bytes, *pixel_buf;
+    rt_uint16_t pixel_pos;
 
     RT_ASSERT(gra != RT_NULL);
-    RT_ASSERT(gra->info.framebuffer != RT_NULL);
 
     pixel_bytes = gra->info.bits_per_pixel / 8;
-    pixel_addr = gra->info.framebuffer + y * gra->info.pitch + ((pixel_bytes == 0) ? x / 8 : x * pixel_bytes);
+    pixel_buf = (rt_uint8_t *)rt_calloc(1, pixel_bytes > 1 ? pixel_bytes : 1);
+    pixel_pos = y * gra->info.pitch + ((pixel_bytes == 0) ? x / 8 : x * pixel_bytes);
+
+    rt_device_read((rt_device_t)gra, pixel_pos, pixel_buf, pixel_bytes > 1 ? pixel_bytes : 1);
 
     if (pixel_bytes == 0)
     {
         rt_int16_t bit = x & 0x7;
 
-        if (*pixel_addr & (1 << bit))
+        if (*pixel_buf & (1 << bit))
             *pixel = 1;
         else
             *pixel = 0;
     }
     else
     {
-        rt_memcpy(pixel, pixel_addr, pixel_bytes);
+        rt_memcpy(pixel, pixel_buf, pixel_bytes);
     }
+    
+    rt_free(pixel_buf);
 
     return result;
 }
@@ -204,9 +221,6 @@ rt_err_t rt_graphic_refresh(rt_device_graphic_t gra)
     rt_err_t result = RT_EOK;
 
     RT_ASSERT(gra != RT_NULL);
-
-    if (gra->ops->convert)
-        result = gra->ops->convert(gra);
 
     if (gra->ops->refresh)
         result = gra->ops->refresh(gra);

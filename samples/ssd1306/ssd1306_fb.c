@@ -15,27 +15,6 @@ struct rt_device_graphic ssd1306;
 typedef rt_uint8_t (*fbarr)[128];
 rt_uint8_t *convert_buf;
 
-static rt_err_t ssd_convert(rt_device_graphic_t gra)
-{
-    rt_uint8_t data, x, page, bit;
-    rt_uint16_t i = 0;
-    char pixel;
-
-    for (page = 0; page < 8; page++)
-    {
-        for (x = 0; x < 128; x++)
-        {
-            data = 0;
-            for (bit = 0; bit < 8; bit++)
-            {
-                rt_graphic_get_pixel(gra, &pixel, x, page * 8 + bit);
-                data |= pixel << bit;
-            }
-            convert_buf[i++] = data;
-        }
-    }
-    return RT_EOK;
-}
 
 static rt_err_t ssd_refresh(rt_device_graphic_t gra)
 {
@@ -47,7 +26,7 @@ static rt_err_t ssd_refresh(rt_device_graphic_t gra)
         OLED_WR_Byte(0x00, OLED_CMD);     //设置低列起始地址
         OLED_WR_Byte(0x10, OLED_CMD);     //设置高列起始地址
         for (n = 0; n < 128; n++)
-            OLED_WR_Byte(((fbarr)convert_buf)[i][n], OLED_DATA);
+            OLED_WR_Byte(((fbarr)gra->info.framebuffer)[i][n], OLED_DATA);
     }
 
     return RT_EOK;
@@ -60,11 +39,57 @@ static rt_err_t ssd_init(rt_device_graphic_t gra)
     return RT_EOK;
 }
 
-static const struct rt_device_graphic_ops ssd_ops =
+rt_size_t ssd_write(rt_device_graphic_t gra, rt_off_t pos, const void *buffer, rt_size_t size)
 {
-    .init = ssd_init,
-    .refresh = ssd_refresh,
-    .convert = ssd_convert,
+    int cur_pos,byte8, bit, i;
+    for(cur_pos = pos ;cur_pos<(pos+size);cur_pos++)
+    {	
+        byte8 = cur_pos % 16 * 8 + (cur_pos /128 *128);
+        bit = cur_pos / 16 % 8;
+        
+        for (i = 0; i < 8; i++)
+        {
+            if (((rt_uint8_t *)buffer)[cur_pos-pos] & (1 << i))
+            {
+                gra->info.framebuffer[byte8 + i] |= (1 << (bit));
+            }
+            else
+            {
+                gra->info.framebuffer[byte8 + i] &= ~(1 << (bit));
+            }
+        }
+    }
+    return size;
+}
+
+rt_size_t ssd_read(rt_device_graphic_t gra, rt_off_t pos, void *buffer, rt_size_t size)
+{
+    int cur_pos,byte8, bit, i;
+    for(cur_pos = pos ;cur_pos<(pos+size);cur_pos++)
+    {	
+        byte8 = cur_pos % 16 * 8 + (cur_pos /128 *128);
+        bit = cur_pos / 16 % 8;
+        
+        for (i = 0; i < 8; i++)
+        {
+            if (gra->info.framebuffer[byte8 + i] & (1 << bit))
+            {
+                ((rt_uint8_t *)buffer)[cur_pos-pos] |= (1 << i);
+            }
+            else
+            {
+                ((rt_uint8_t *)buffer)[cur_pos-pos] &= ~(1 << i);
+            }
+        }
+    }
+    return size;
+}
+static const struct rt_device_graphic_ops ssd_ops =
+    {
+        .init = ssd_init,
+        .refresh = ssd_refresh,
+        .write = ssd_write,
+        .read = ssd_read,
 };
 
 int ssd1306_hw_init(void)
